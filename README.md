@@ -64,8 +64,12 @@ commands but doesn't report changes made with the IR remote, and most
 consumer models ignore status queries (only Pro Bravia / B2B displays answer
 them). The entity is therefore an *assumed-state* media player: it reflects
 the last acknowledged command, and the integration polls the queryable
-functions once a minute for displays that do answer. If the serial link
-drops, the integration reconnects automatically with backoff.
+functions once a minute for displays that do answer. On displays that answer
+queries, the integration also runs a **full state query** at startup when
+the TV is on, and again a few seconds after every power-on, so the entity
+repopulates; set-only TVs skip these rounds entirely (each query would just
+time out). If the serial link drops, the integration reconnects
+automatically with backoff.
 
 ## License
 

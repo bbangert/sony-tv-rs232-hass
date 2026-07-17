@@ -19,11 +19,12 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .const import (
     DOMAIN,
     LOGGER,
+    POWER_ON_QUERY_DELAY,
     RECONNECT_INITIAL_DELAY,
     RECONNECT_MAX_DELAY,
     SCAN_INTERVAL_SECONDS,
 )
-from .sony_tv_rs232 import CommandError
+from .sony_tv_rs232 import CommandError, PowerState
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -56,6 +57,13 @@ class SonyTVCoordinator(DataUpdateCoordinator["TVState"]):
         self.tv = tv
         self._unsubscribe: Callable[[], None] | None = None
         self._reconnect_task: asyncio.Task | None = None
+        self._power_refresh_task: asyncio.Task | None = None
+        self._last_power: bool | None = None
+        # True once the TV has answered any query; False when the power
+        # probe went unanswered (consumer sets are set-only). Gates the
+        # full query rounds so a set-only TV doesn't burn a serialized
+        # timeout per function on every power-on.
+        self._supports_queries: bool | None = None
 
     async def _async_setup(self) -> None:
         """Open the serial port and subscribe to state changes."""
@@ -64,7 +72,31 @@ class SonyTVCoordinator(DataUpdateCoordinator["TVState"]):
         except (ConnectionError, TimeoutError, OSError) as err:
             raise UpdateFailed(f"Cannot open serial port to Sony TV: {err}") from err
         await self._arm_standby_listening()
+        await self._probe_and_query()
         self._unsubscribe = self.tv.subscribe(self._handle_state)
+
+    async def _probe_and_query(self) -> None:
+        """Probe query support with a power query; full-query if the TV is on."""
+        try:
+            power = await self.tv.query_power()
+        except TimeoutError, CommandError:
+            self._supports_queries = False
+            LOGGER.debug(
+                "TV did not answer a power query; running set-only "
+                "(state updates optimistically on command acks)"
+            )
+            return
+        self._supports_queries = True
+        self._last_power = power is PowerState.ON
+        if power is PowerState.ON:
+            await self._full_query()
+
+    async def _full_query(self) -> None:
+        """Run the library's full query round (it skips unanswered functions)."""
+        try:
+            await self.tv.query_state()
+        except (ConnectionError, TimeoutError, OSError) as err:
+            LOGGER.debug("Full state query failed: %s", err)
 
     async def _async_update_data(self) -> TVState:
         """Poll the queryable functions; consumer sets ignore them all."""
@@ -80,6 +112,8 @@ class SonyTVCoordinator(DataUpdateCoordinator["TVState"]):
                 await query()
             except TimeoutError, CommandError:
                 continue
+            else:
+                self._supports_queries = True
         return self.tv.state
 
     async def async_shutdown(self) -> None:
@@ -87,6 +121,9 @@ class SonyTVCoordinator(DataUpdateCoordinator["TVState"]):
         if self._reconnect_task is not None:
             self._reconnect_task.cancel()
             self._reconnect_task = None
+        if self._power_refresh_task is not None:
+            self._power_refresh_task.cancel()
+            self._power_refresh_task = None
         if self._unsubscribe is not None:
             self._unsubscribe()
             self._unsubscribe = None
@@ -112,7 +149,31 @@ class SonyTVCoordinator(DataUpdateCoordinator["TVState"]):
             self.async_set_update_error(ConnectionError("Connection to TV lost"))
             self._schedule_reconnect()
             return
+        if state.power is not None:
+            power_on = state.power is PowerState.ON
+            turned_on = power_on and self._last_power is False
+            self._last_power = power_on
+            if turned_on and self._supports_queries:
+                # Repopulate everything once the set has booted -- only
+                # worthwhile on displays that actually answer queries.
+                self._schedule_power_refresh()
         self.async_set_updated_data(state)
+
+    @callback
+    def _schedule_power_refresh(self) -> None:
+        if self._power_refresh_task is not None and not self._power_refresh_task.done():
+            return
+        self._power_refresh_task = self.config_entry.async_create_background_task(
+            self.hass,
+            self._power_on_refresh(),
+            name=f"{DOMAIN} power-on refresh",
+        )
+
+    async def _power_on_refresh(self) -> None:
+        """Re-query the full state after the TV powers on."""
+        await asyncio.sleep(POWER_ON_QUERY_DELAY)
+        await self._full_query()
+        self.async_set_updated_data(self.tv.state)
 
     @callback
     def _schedule_reconnect(self) -> None:
@@ -136,5 +197,6 @@ class SonyTVCoordinator(DataUpdateCoordinator["TVState"]):
                 continue
             LOGGER.info("Reconnected to Sony TV")
             await self._arm_standby_listening()
+            await self._probe_and_query()
             self.async_set_updated_data(self.tv.state)
             return
