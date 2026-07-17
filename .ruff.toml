@@ -1,0 +1,33 @@
+# Based on https://github.com/ludeeus/integration_blueprint/blob/main/.ruff.toml
+
+target-version = "py314"
+
+# The vendored sony-tv-rs232 library keeps its upstream style.
+extend-exclude = ["custom_components/sony_tv_rs232/sony_tv_rs232"]
+
+[lint]
+select = [
+    "ALL",
+]
+
+ignore = [
+    "ANN401", # Dynamically typed expressions (typing.Any) are disallowed
+    "D203", # no-blank-line-before-class (incompatible with formatter)
+    "D213", # multi-line-summary-second-line (we use D212, like HA core)
+    "COM812", # incompatible with formatter
+    "ISC001", # incompatible with formatter
+    "EM101", # raw string in exception (HA core style raises with messages)
+    "EM102", # f-string in exception (HA core style raises with messages)
+    "TRY003", # long messages outside exception class (HA core style)
+    "FBT001", # boolean positional arg (fixed HA entity method signatures)
+    "FBT002", # boolean default positional arg
+]
+
+[lint.flake8-pytest-style]
+fixture-parentheses = false
+
+[lint.pyupgrade]
+keep-runtime-typing = true
+
+[lint.mccabe]
+max-complexity = 25

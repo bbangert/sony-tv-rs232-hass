@@ -1,0 +1,18 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "description": "Set up a Sony Bravia TV connected over RS-232. Pick the serial port the TV is wired to — local USB adapters and ESPHome serial proxy ports are listed automatically. Note: Sony's protocol has no handshake, so a wiring problem only shows up later as commands that never get acknowledged.",
+                "data": {
+                    "port": "Serial port"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "Failed to open the serial port."
+        },
+        "abort": {
+            "already_configured": "This serial port is already configured."
+        }
+    }
+}

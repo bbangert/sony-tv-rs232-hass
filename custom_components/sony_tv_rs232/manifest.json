@@ -1,0 +1,19 @@
+{
+  "domain": "sony_tv_rs232",
+  "name": "Sony TV RS-232",
+  "codeowners": [
+    "@bbangert"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "usb"
+  ],
+  "documentation": "https://github.com/bbangert/sony-tv-rs232-hass",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/bbangert/sony-tv-rs232-hass/issues",
+  "requirements": [
+    "serialx[esphome]>=1.8.0"
+  ],
+  "version": "0.1.0"
+}
