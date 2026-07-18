@@ -162,6 +162,18 @@ class SonyTVMediaPlayer(SonyTVEntity, MediaPlayerEntity):
         """Turn the TV off (standby)."""
         await self._send(self.coordinator.tv.power_off())
 
+    async def async_toggle(self) -> None:
+        """Toggle with discrete power commands; unknown state powers on.
+
+        The default toggle sends power-off when the state is unknown —
+        common here, since consumer sets never report state. The TV has
+        discrete power commands, so powering on is the safe resolution.
+        """
+        if self.state is MediaPlayerState.ON:
+            await self.async_turn_off()
+        else:
+            await self.async_turn_on()
+
     async def async_set_volume_level(self, volume: float) -> None:
         """Set the TV volume."""
         await self._send(self.coordinator.tv.set_volume(round(volume * 100)))
