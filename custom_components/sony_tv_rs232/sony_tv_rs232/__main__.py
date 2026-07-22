@@ -15,10 +15,12 @@ import logging
 import sys
 
 from . import (
-    CommandError,
+    CommandTimeoutError,
+    ConnectionLostError,
     InputSource,
     PictureMode,
     PowerState,
+    ProtocolError,
     SonyTV,
     TVState,
     WideMode,
@@ -137,7 +139,7 @@ async def _run(args: argparse.Namespace) -> int:
     print(f"Connecting to {args.port}...")
     try:
         await tv.connect()
-    except ConnectionError as err:
+    except (ConnectionLostError, OSError) as err:
         print(f"Error: {err}", file=sys.stderr)
         return 1
 
@@ -217,7 +219,7 @@ async def _run(args: argparse.Namespace) -> int:
         # Default: query everything and print
         try:
             power = await tv.query_power()
-        except (TimeoutError, CommandError) as err:
+        except (CommandTimeoutError, ProtocolError) as err:
             print(
                 f"Power query failed ({err}). This Sony model may not honour "
                 "queries — only Set commands. Try --power on/off / --input HDMI1.",

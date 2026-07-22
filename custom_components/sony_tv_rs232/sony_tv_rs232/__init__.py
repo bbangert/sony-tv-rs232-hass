@@ -1,5 +1,11 @@
-"""Async library to control Sony Bravia TVs over RS232 using serialx."""
+"""Async library to control Sony Bravia TVs over RS232, built on serialkit."""
 
+from ._kit import (
+    CommandTimeoutError,
+    ConnectionLostError,
+    ProtocolError,
+    SerialKitError,
+)
 from .const import (
     BAUD_RATE,
     CATEGORY,
@@ -26,11 +32,11 @@ from .const import (
     SoundMode,
     WideMode,
 )
+from .framing import SonyAnswerFramer
 from .protocol import (
     Answer,
-    CommandError,
-    PendingCommand,
-    ProtocolError,
+    SonyCommandError,
+    SonyProtocolError,
     byte_to_percent,
     checksum,
     encode_control,
@@ -50,7 +56,8 @@ __all__ = [
     "COMMAND_TIMEOUT",
     "CineMotion",
     "ClosedCaption",
-    "CommandError",
+    "CommandTimeoutError",
+    "ConnectionLostError",
     "Function",
     "HEADER_ANSWER",
     "HEADER_CONTROL",
@@ -64,10 +71,13 @@ __all__ = [
     "MIN_VOLUME",
     "Mode4_3",
     "OffTimer",
-    "PendingCommand",
     "PictureMode",
     "PowerState",
     "ProtocolError",
+    "SerialKitError",
+    "SonyAnswerFramer",
+    "SonyCommandError",
+    "SonyProtocolError",
     "SonyTV",
     "SoundMode",
     "StateCallback",

@@ -13,7 +13,7 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/bbangert/sony-tv-rs232-hass/issues",
   "requirements": [
-    "serialx[esphome]>=1.8.0"
+    "serialx[esphome]>=1.8.2"
   ],
-  "version": "0.2.2"
+  "version": "0.3.0"
 }

@@ -2,8 +2,13 @@
 
 target-version = "py314"
 
-# The vendored sony-tv-rs232 library keeps its upstream style.
-extend-exclude = ["custom_components/sony_tv_rs232/sony_tv_rs232"]
+# The vendored sony-tv-rs232 and serialkit libraries keep their upstream style
+# (they are linted in their own repos); the integration's ALL ruleset does not
+# apply to vendored code.
+extend-exclude = [
+    "custom_components/sony_tv_rs232/sony_tv_rs232",
+    "custom_components/sony_tv_rs232/serialkit",
+]
 
 [lint]
 select = [

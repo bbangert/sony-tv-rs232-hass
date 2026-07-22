@@ -1,10 +1,14 @@
 """DataUpdateCoordinator wrapping a Sony TV serial connection.
 
-Sony's RS-232 protocol emits no unsolicited state reports, so the
-coordinator polls. Consumer Bravia TVs are set-only and ignore query
-packets — every poll attempt is best-effort, and state otherwise updates
-optimistically when set commands are acknowledged (the library notifies
-subscribers on both paths).
+Sony's RS-232 protocol emits no unsolicited state reports, so the coordinator
+polls. Consumer Bravia TVs are set-only and ignore query packets — every poll
+attempt is best-effort, and state otherwise updates optimistically when set
+commands are acknowledged (the library notifies subscribers on both paths).
+
+Reconnect is owned by the vendored serialkit runtime, not this coordinator: on
+a dropped link the library fails in-flight requests, notifies subscribers with
+``None``, backs off, reopens, re-runs the connect handshake, and notifies
+again. The coordinator only reflects those notifications into HA.
 """
 
 from __future__ import annotations
@@ -20,11 +24,15 @@ from .const import (
     DOMAIN,
     LOGGER,
     POWER_ON_QUERY_DELAY,
-    RECONNECT_INITIAL_DELAY,
-    RECONNECT_MAX_DELAY,
     SCAN_INTERVAL_SECONDS,
 )
-from .sony_tv_rs232 import CommandError, PowerState
+from .sony_tv_rs232 import (
+    CommandTimeoutError,
+    ConnectionLostError,
+    PowerState,
+    ProtocolError,
+    SerialKitError,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -36,7 +44,7 @@ if TYPE_CHECKING:
 
 
 class SonyTVCoordinator(DataUpdateCoordinator["TVState"]):
-    """Poll the TV for state; reconnect when the serial link drops."""
+    """Poll the TV for state; serialkit handles the serial link and reconnect."""
 
     config_entry: SonyTVConfigEntry
 
@@ -56,52 +64,30 @@ class SonyTVCoordinator(DataUpdateCoordinator["TVState"]):
         )
         self.tv = tv
         self._unsubscribe: Callable[[], None] | None = None
-        self._reconnect_task: asyncio.Task | None = None
         self._power_refresh_task: asyncio.Task | None = None
         self._last_power: bool | None = None
-        # True once the TV has answered any query; False when the power
-        # probe went unanswered (consumer sets are set-only). Gates the
-        # full query rounds so a set-only TV doesn't burn a serialized
-        # timeout per function on every power-on.
-        self._supports_queries: bool | None = None
 
     async def _async_setup(self) -> None:
-        """Open the serial port and subscribe to state changes."""
+        """Open the serial port and subscribe to state changes.
+
+        The library's ``connect()`` runs the handshake (arm standby listening,
+        probe query support, full query if the TV is on); nothing else to do.
+        """
         try:
             await self.tv.connect()
-        except (ConnectionError, TimeoutError, OSError) as err:
+        except (SerialKitError, OSError) as err:
             raise UpdateFailed(f"Cannot open serial port to Sony TV: {err}") from err
-        await self._arm_standby_listening()
-        await self._probe_and_query()
+        self._last_power = _power_is_on(self.tv.state)
         self._unsubscribe = self.tv.subscribe(self._handle_state)
-
-    async def _probe_and_query(self) -> None:
-        """Probe query support with a power query; full-query if the TV is on."""
-        try:
-            power = await self.tv.query_power()
-        except TimeoutError, CommandError:
-            self._supports_queries = False
-            LOGGER.debug(
-                "TV did not answer a power query; running set-only "
-                "(state updates optimistically on command acks)"
-            )
-            return
-        self._supports_queries = True
-        self._last_power = power is PowerState.ON
-        if power is PowerState.ON:
-            await self._full_query()
-
-    async def _full_query(self) -> None:
-        """Run the library's full query round (it skips unanswered functions)."""
-        try:
-            await self.tv.query_state()
-        except (ConnectionError, TimeoutError, OSError) as err:
-            LOGGER.debug("Full state query failed: %s", err)
 
     async def _async_update_data(self) -> TVState:
         """Poll the queryable functions; consumer sets ignore them all."""
         if not self.tv.connected:
             raise UpdateFailed("Not connected to the TV")
+        if self.tv.supports_queries is False:
+            # A set-only TV: polling would just burn a serialized timeout per
+            # function. Optimistic state from command acks is all we get.
+            return self.tv.state.copy()
         for query in (
             self.tv.query_power,
             self.tv.query_input_source,
@@ -110,17 +96,12 @@ class SonyTVCoordinator(DataUpdateCoordinator["TVState"]):
         ):
             try:
                 await query()
-            except TimeoutError, CommandError:
+            except (CommandTimeoutError, ProtocolError):
                 continue
-            else:
-                self._supports_queries = True
-        return self.tv.state
+        return self.tv.state.copy()
 
     async def async_shutdown(self) -> None:
-        """Stop reconnecting and close the serial connection."""
-        if self._reconnect_task is not None:
-            self._reconnect_task.cancel()
-            self._reconnect_task = None
+        """Stop polling and close the serial connection."""
         if self._power_refresh_task is not None:
             self._power_refresh_task.cancel()
             self._power_refresh_task = None
@@ -130,30 +111,22 @@ class SonyTVCoordinator(DataUpdateCoordinator["TVState"]):
         await self.tv.disconnect()
         await super().async_shutdown()
 
-    async def _arm_standby_listening(self) -> None:
-        """Enable Sony's Standby Command so Power ON works from standby.
-
-        Only takes effect while the TV is on; harmless to retry after
-        reconnects.
-        """
-        try:
-            await self.tv.enable_standby_listening()
-        except (TimeoutError, CommandError) as err:
-            LOGGER.debug("Could not enable standby listening: %s", err)
-
     @callback
     def _handle_state(self, state: TVState | None) -> None:
-        """Handle a state notification from the library."""
+        """Handle a state notification from the library.
+
+        ``None`` means the serial link dropped; serialkit reconnects on its
+        own, so we only surface the outage — no reconnect is scheduled here.
+        """
         if state is None:
-            LOGGER.warning("Connection to Sony TV lost; will reconnect")
-            self.async_set_update_error(ConnectionError("Connection to TV lost"))
-            self._schedule_reconnect()
+            LOGGER.warning("Connection to Sony TV lost; serialkit will reconnect")
+            self.async_set_update_error(ConnectionLostError("Connection to TV lost"))
             return
         if state.power is not None:
             power_on = state.power is PowerState.ON
             turned_on = power_on and self._last_power is False
             self._last_power = power_on
-            if turned_on and self._supports_queries:
+            if turned_on and self.tv.supports_queries:
                 # Repopulate everything once the set has booted -- only
                 # worthwhile on displays that actually answer queries.
                 self._schedule_power_refresh()
@@ -172,31 +145,14 @@ class SonyTVCoordinator(DataUpdateCoordinator["TVState"]):
     async def _power_on_refresh(self) -> None:
         """Re-query the full state after the TV powers on."""
         await asyncio.sleep(POWER_ON_QUERY_DELAY)
-        await self._full_query()
-        self.async_set_updated_data(self.tv.state)
+        try:
+            await self.tv.query_state()
+        except (CommandTimeoutError, ProtocolError) as err:
+            LOGGER.debug("Power-on refresh query failed: %s", err)
+        self.async_set_updated_data(self.tv.state.copy())
 
-    @callback
-    def _schedule_reconnect(self) -> None:
-        if self._reconnect_task is not None and not self._reconnect_task.done():
-            return
-        self._reconnect_task = self.config_entry.async_create_background_task(
-            self.hass,
-            self._reconnect(),
-            name=f"{DOMAIN} reconnect",
-        )
 
-    async def _reconnect(self) -> None:
-        delay = RECONNECT_INITIAL_DELAY
-        while True:
-            await asyncio.sleep(delay)
-            try:
-                await self.tv.connect()
-            except (ConnectionError, TimeoutError, OSError) as err:
-                LOGGER.debug("Reconnect failed (%s); retrying in %.0f s", err, delay)
-                delay = min(delay * 2, RECONNECT_MAX_DELAY)
-                continue
-            LOGGER.info("Reconnected to Sony TV")
-            await self._arm_standby_listening()
-            await self._probe_and_query()
-            self.async_set_updated_data(self.tv.state)
-            return
+def _power_is_on(state: TVState | None) -> bool | None:
+    if state is None or state.power is None:
+        return None
+    return state.power is PowerState.ON

@@ -10,7 +10,7 @@ from homeassistant.const import CONF_PORT
 from homeassistant.helpers.selector import SerialPortSelector
 
 from .const import DOMAIN, LOGGER
-from .sony_tv_rs232 import CommandError, SonyTV
+from .sony_tv_rs232 import SerialKitError, SonyTV
 
 # SerialPortSelector lists the host's serial ports plus remote ports from
 # ESPHome serial proxies; requires "usb" in the manifest dependencies.
@@ -43,18 +43,14 @@ class SonyTVConfigFlow(ConfigFlow, domain=DOMAIN):
             tv = SonyTV(port)
             try:
                 await tv.connect()
-            except (ConnectionError, TimeoutError, OSError, ValueError) as err:
+            except (SerialKitError, OSError, ValueError) as err:
                 LOGGER.error("Error opening %s: %s", port, err)
                 errors["base"] = "cannot_connect"
             else:
-                try:
-                    # Pro Bravia displays answer queries; consumer sets
-                    # don't, so a timeout here is not an error.
-                    await tv.query_power()
-                except TimeoutError, CommandError:
-                    LOGGER.debug("TV on %s did not answer a power query", port)
-                finally:
-                    await tv.disconnect()
+                # connect() opened the port and ran the handshake (which
+                # probes with a power query). Consumer sets ignore queries, so
+                # reaching here simply means the port is usable.
+                await tv.disconnect()
                 return self.async_create_entry(
                     title="Sony TV",
                     data={CONF_PORT: port},

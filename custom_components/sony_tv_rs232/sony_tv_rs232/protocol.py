@@ -32,9 +32,9 @@ Example::
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 
+from ._kit import ProtocolError
 from .const import (
     CATEGORY,
     HEADER_ANSWER,
@@ -44,11 +44,15 @@ from .const import (
 )
 
 
-class ProtocolError(Exception):
-    """Raised when a malformed packet is received from the TV."""
+class SonyProtocolError(ProtocolError):
+    """Raised when a malformed packet is received from the TV.
+
+    Subclasses serialkit's ``ProtocolError`` so a Home Assistant coordinator
+    can catch kit-level types without importing sony's private exceptions.
+    """
 
 
-class CommandError(Exception):
+class SonyCommandError(ProtocolError):
     """Raised when the TV returns a non-zero answer code."""
 
     def __init__(self, code: AnswerCode, function: int) -> None:
@@ -72,7 +76,7 @@ class Answer:
 
     def raise_for_status(self, function: int) -> None:
         if not self.ok:
-            raise CommandError(self.code, function)
+            raise SonyCommandError(self.code, function)
 
 
 def checksum(buf: bytes) -> int:
@@ -126,16 +130,16 @@ def parse_answer(packet: bytes) -> Answer:
     b'\\x01'
     """
     if len(packet) < 3:
-        raise ProtocolError(f"Answer too short: {packet!r}")
+        raise SonyProtocolError(f"Answer too short: {packet!r}")
     if packet[0] != HEADER_ANSWER:
-        raise ProtocolError(f"Unexpected answer header: 0x{packet[0]:02x}")
+        raise SonyProtocolError(f"Unexpected answer header: 0x{packet[0]:02x}")
     if packet[-1] != checksum(packet[:-1]):
-        raise ProtocolError(f"Bad checksum on answer: {packet!r}")
+        raise SonyProtocolError(f"Bad checksum on answer: {packet!r}")
 
     try:
         code = AnswerCode(packet[1])
     except ValueError as err:
-        raise ProtocolError(f"Unknown answer code: 0x{packet[1]:02x}") from err
+        raise SonyProtocolError(f"Unknown answer code: 0x{packet[1]:02x}") from err
 
     if len(packet) == 3:
         return Answer(code=code, data=b"")
@@ -145,7 +149,7 @@ def parse_answer(packet: bytes) -> Answer:
     size = packet[2]
     expected_total = 3 + size
     if len(packet) != expected_total:
-        raise ProtocolError(
+        raise SonyProtocolError(
             f"Size mismatch: header says {size} (=> {expected_total} total), "
             f"got {len(packet)} bytes"
         )
@@ -176,12 +180,3 @@ def byte_to_percent(value: int) -> int:
     if not 0 <= value <= 100:
         raise ValueError(f"data out of range 0..100: {value}")
     return value
-
-
-@dataclass
-class PendingCommand:
-    """A pending command waiting for the TV's answer packet."""
-
-    function: int
-    is_query: bool  # True if a Query reply is expected, False for a Set ack
-    future: asyncio.Future[Answer]

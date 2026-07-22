@@ -23,10 +23,9 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from .const import DOMAIN, MANUFACTURER
 from .entity import SonyTVEntity
 from .sony_tv_rs232 import (
-    CommandError,
     InputSource,
     PowerState,
-    ProtocolError,
+    SerialKitError,
     SoundMode,
 )
 
@@ -145,13 +144,9 @@ class SonyTVMediaPlayer(SonyTVEntity, MediaPlayerEntity):
         """Await a TV command, mapping library errors to HA errors."""
         try:
             await command
-        except (
-            CommandError,
-            ProtocolError,
-            TimeoutError,
-            ConnectionError,
-            OSError,
-        ) as err:
+        except (SerialKitError, OSError) as err:
+            # SerialKitError covers CommandTimeoutError, ConnectionLostError,
+            # and the ProtocolError family (SonyCommandError/SonyProtocolError).
             raise HomeAssistantError(f"Command to Sony TV failed: {err}") from err
 
     async def async_turn_on(self) -> None:
