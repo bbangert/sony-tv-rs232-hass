@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import voluptuous as vol
@@ -11,6 +12,11 @@ from homeassistant.helpers.selector import SerialPortSelector
 
 from .const import DOMAIN, LOGGER
 from .sony_tv_rs232 import SerialKitError, SonyTV
+
+# Bound the port open so an unreachable socket:// / esphome:// URL surfaces as
+# cannot_connect instead of hanging the flow. connect() opens the port and runs
+# the handshake, which is paced; the handshake's own query timeouts are small.
+_CONNECT_TIMEOUT = 15.0
 
 # SerialPortSelector lists the host's serial ports plus remote ports from
 # ESPHome serial proxies; requires "usb" in the manifest dependencies.
@@ -42,8 +48,9 @@ class SonyTVConfigFlow(ConfigFlow, domain=DOMAIN):
             self._async_abort_entries_match({CONF_PORT: port})
             tv = SonyTV(port)
             try:
-                await tv.connect()
-            except (SerialKitError, OSError, ValueError) as err:
+                async with asyncio.timeout(_CONNECT_TIMEOUT):
+                    await tv.connect()
+            except (SerialKitError, OSError, ValueError, TimeoutError) as err:
                 LOGGER.error("Error opening %s: %s", port, err)
                 errors["base"] = "cannot_connect"
             else:

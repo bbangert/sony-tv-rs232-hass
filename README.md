@@ -31,8 +31,8 @@ Copy `custom_components/sony_tv_rs232/` into your Home Assistant
 >
 > | Vendored package | Path | Pinned to |
 > | --- | --- | --- |
-> | [sony-tv-rs232](https://github.com/home-assistant-libs/sony-tv-rs232) | `custom_components/sony_tv_rs232/sony_tv_rs232/` | commit `3a24518` |
-> | [serialkit](https://github.com/home-assistant-libs/serialkit) | `custom_components/sony_tv_rs232/serialkit/` | v0.1.0 (commit `556fefa`) |
+> | [sony-tv-rs232](https://github.com/home-assistant-libs/sony-tv-rs232) | `custom_components/sony_tv_rs232/sony_tv_rs232/` | commit `28b1fd9` |
+> | [serialkit](https://github.com/bbangert/serialkit) | `custom_components/sony_tv_rs232/serialkit/` | v0.1.1 (commit `45f5f27`) |
 >
 > The sony driver imports serialkit through its `_kit.py` seam, rewritten to
 > a relative `..serialkit` import for the vendored layout.

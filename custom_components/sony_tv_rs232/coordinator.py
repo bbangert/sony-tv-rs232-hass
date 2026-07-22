@@ -14,6 +14,7 @@ again. The coordinator only reflects those notifications into HA.
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
@@ -66,6 +67,9 @@ class SonyTVCoordinator(DataUpdateCoordinator["TVState"]):
         self._unsubscribe: Callable[[], None] | None = None
         self._power_refresh_task: asyncio.Task | None = None
         self._last_power: bool | None = None
+        # on_connect() already ran a full query during setup, so the first
+        # poll right after would just repeat 4 of those queries; skip it once.
+        self._skip_next_poll = False
 
     async def _async_setup(self) -> None:
         """Open the serial port and subscribe to state changes.
@@ -79,11 +83,16 @@ class SonyTVCoordinator(DataUpdateCoordinator["TVState"]):
             raise UpdateFailed(f"Cannot open serial port to Sony TV: {err}") from err
         self._last_power = _power_is_on(self.tv.state)
         self._unsubscribe = self.tv.subscribe(self._handle_state)
+        self._skip_next_poll = True
 
     async def _async_update_data(self) -> TVState:
         """Poll the queryable functions; consumer sets ignore them all."""
         if not self.tv.connected:
             raise UpdateFailed("Not connected to the TV")
+        if self._skip_next_poll:
+            # on_connect() just populated state during setup — don't re-query.
+            self._skip_next_poll = False
+            return self.tv.state.copy()
         if self.tv.supports_queries is False:
             # A set-only TV: polling would just burn a serialized timeout per
             # function. Optimistic state from command acks is all we get.
@@ -104,6 +113,8 @@ class SonyTVCoordinator(DataUpdateCoordinator["TVState"]):
         """Stop polling and close the serial connection."""
         if self._power_refresh_task is not None:
             self._power_refresh_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._power_refresh_task
             self._power_refresh_task = None
         if self._unsubscribe is not None:
             self._unsubscribe()
