@@ -23,19 +23,16 @@ Copy `custom_components/sony_tv_rs232/` into your Home Assistant
 `config/custom_components/` directory and restart.
 
 > [!NOTE]
-> Two upstream libraries with no PyPI release yet are **vendored** into the
-> integration, so the only requirement Home Assistant installs from PyPI is
-> [serialx](https://pypi.org/project/serialx/), the async serial transport
-> (a `git+https://…` requirement would pass CI but fail to install at HA
-> runtime):
->
-> | Vendored package | Path | Pinned to |
-> | --- | --- | --- |
-> | [sony-tv-rs232](https://github.com/home-assistant-libs/sony-tv-rs232) | `custom_components/sony_tv_rs232/sony_tv_rs232/` | `main` @ `aa5f385` |
-> | [serialkit](https://github.com/bbangert/serialkit) | `custom_components/sony_tv_rs232/serialkit/` | v0.1.1 (commit `45f5f27`) |
->
-> The sony driver imports serialkit through its `_kit.py` seam, rewritten to
-> a relative `..serialkit` import for the vendored layout.
+> The [sony-tv-rs232](https://github.com/home-assistant-libs/sony-tv-rs232)
+> driver has no PyPI release, so its package is **vendored** into the
+> integration at `custom_components/sony_tv_rs232/sony_tv_rs232/` (tracking
+> upstream commit `da1937d`). Everything else is installed from PyPI via the
+> manifest `requirements`:
+> [serial-toolkit](https://pypi.org/project/serial-toolkit/) (the serialkit
+> toolkit — imported as `serialkit`) and
+> [serialx](https://pypi.org/project/serialx/) (the async serial transport).
+> Requirements are PyPI-only on purpose: a `git+https://…` requirement passes
+> CI but fails to install at HA runtime.
 
 ## Configuration
 

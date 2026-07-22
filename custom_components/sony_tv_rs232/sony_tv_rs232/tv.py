@@ -19,7 +19,7 @@ from typing import Any, TypeVar
 
 import serialx
 
-from ._kit import (
+from serialkit import (
     CommandTimeoutError,
     Pacing,
     ProtocolError,

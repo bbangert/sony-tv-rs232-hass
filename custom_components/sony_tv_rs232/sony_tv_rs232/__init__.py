@@ -1,6 +1,6 @@
 """Async library to control Sony Bravia TVs over RS232, built on serialkit."""
 
-from ._kit import (
+from serialkit import (
     CommandTimeoutError,
     ConnectionLostError,
     ProtocolError,
