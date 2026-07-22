@@ -105,7 +105,7 @@ class SonyTVCoordinator(DataUpdateCoordinator["TVState"]):
         ):
             try:
                 await query()
-            except (CommandTimeoutError, ProtocolError):
+            except CommandTimeoutError, ProtocolError:
                 continue
         return self.tv.state.copy()
 
