@@ -21,13 +21,7 @@ from typing import TYPE_CHECKING
 from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import (
-    DOMAIN,
-    LOGGER,
-    POWER_ON_QUERY_DELAY,
-    SCAN_INTERVAL_SECONDS,
-)
-from .sony_tv_rs232 import (
+from sony_tv_rs232 import (
     CommandTimeoutError,
     ConnectionLostError,
     PowerState,
@@ -35,13 +29,21 @@ from .sony_tv_rs232 import (
     SerialKitError,
 )
 
+from .const import (
+    DOMAIN,
+    LOGGER,
+    POWER_ON_QUERY_DELAY,
+    SCAN_INTERVAL_SECONDS,
+)
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from homeassistant.core import HomeAssistant
 
+    from sony_tv_rs232 import SonyTV, TVState
+
     from .data import SonyTVConfigEntry
-    from .sony_tv_rs232 import SonyTV, TVState
 
 
 class SonyTVCoordinator(DataUpdateCoordinator["TVState"]):
@@ -157,7 +159,7 @@ class SonyTVCoordinator(DataUpdateCoordinator["TVState"]):
         """Re-query the full state after the TV powers on."""
         await asyncio.sleep(POWER_ON_QUERY_DELAY)
         try:
-            await self.tv.query_state()
+            await self.tv.refresh()
         except (CommandTimeoutError, ProtocolError) as err:
             LOGGER.debug("Power-on refresh query failed: %s", err)
         self.async_set_updated_data(self.tv.state.copy())
