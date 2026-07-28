@@ -157,7 +157,7 @@ class SonyTVCoordinator(DataUpdateCoordinator["TVState"]):
         """Re-query the full state after the TV powers on."""
         await asyncio.sleep(POWER_ON_QUERY_DELAY)
         try:
-            await self.tv.query_state()
+            await self.tv.refresh()
         except (CommandTimeoutError, ProtocolError) as err:
             LOGGER.debug("Power-on refresh query failed: %s", err)
         self.async_set_updated_data(self.tv.state.copy())

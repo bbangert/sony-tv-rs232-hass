@@ -71,8 +71,7 @@ class SonyAnswerFramer:
             total = 3 + b2
             if total > self._max_frame:
                 exc = ResyncError(
-                    f"long frame of {total} bytes exceeds max_frame="
-                    f"{self._max_frame}",
+                    f"long frame of {total} bytes exceeds max_frame={self._max_frame}",
                     frames=frames,
                 )
                 self._buffer.clear()
