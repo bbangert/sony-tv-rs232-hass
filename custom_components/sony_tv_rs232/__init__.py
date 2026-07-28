@@ -10,9 +10,10 @@ from typing import TYPE_CHECKING
 
 from homeassistant.const import CONF_PORT, Platform
 
+from sony_tv_rs232 import SonyTV
+
 from .coordinator import SonyTVCoordinator
 from .data import SonyTVData
-from .sony_tv_rs232 import SonyTV
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant

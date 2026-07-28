@@ -8,8 +8,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
+    from sony_tv_rs232 import SonyTV
+
     from .coordinator import SonyTVCoordinator
-    from .sony_tv_rs232 import SonyTV
 
 type SonyTVConfigEntry = ConfigEntry[SonyTVData]
 

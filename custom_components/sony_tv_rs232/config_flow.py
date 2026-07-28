@@ -10,8 +10,9 @@ from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_PORT
 from homeassistant.helpers.selector import SerialPortSelector
 
+from sony_tv_rs232 import SerialKitError, SonyTV
+
 from .const import DOMAIN, LOGGER
-from .sony_tv_rs232 import SerialKitError, SonyTV
 
 # Bound the port open so an unreachable socket:// / esphome:// URL surfaces as
 # cannot_connect instead of hanging the flow. connect() opens the port and runs

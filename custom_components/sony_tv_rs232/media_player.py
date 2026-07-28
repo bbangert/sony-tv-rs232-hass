@@ -20,14 +20,15 @@ from homeassistant.components.media_player import (
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 
-from .const import DOMAIN, MANUFACTURER
-from .entity import SonyTVEntity
-from .sony_tv_rs232 import (
+from sony_tv_rs232 import (
     InputSource,
     PowerState,
     SerialKitError,
     SoundMode,
 )
+
+from .const import DOMAIN, MANUFACTURER
+from .entity import SonyTVEntity
 
 if TYPE_CHECKING:
     from collections.abc import Coroutine
