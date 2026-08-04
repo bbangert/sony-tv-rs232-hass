@@ -1,6 +1,9 @@
 {
   "domain": "sony_tv_rs232",
   "name": "Sony TV RS-232",
+  "after_dependencies": [
+    "esphome"
+  ],
   "codeowners": [
     "@bbangert"
   ],
