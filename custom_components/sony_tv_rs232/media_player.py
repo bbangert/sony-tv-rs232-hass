@@ -1,15 +1,15 @@
 """Media player platform for the Sony TV RS-232 integration.
 
-Sony's consumer RS-232 protocol is set-only: the TV acknowledges commands
-but does not report state changes made with the IR remote, and most models
-ignore query packets. The entity is therefore an assumed-state media
-player — state tracks acknowledged commands (and query replies on Pro
-Bravia displays that answer them).
+Sony's consumer RS-232 protocol is set-only: the TV acknowledges commands but
+does not report changes made with the IR remote, and most models ignore query
+packets. The entity is therefore an assumed-state media player: state tracks
+acknowledged commands, and query replies on the Pro Bravia displays that
+answer them.
 """
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable, Coroutine
+from functools import wraps
+from typing import Any
 
 from homeassistant.components.media_player import (
     MediaPlayerDeviceClass,
@@ -17,60 +17,100 @@ from homeassistant.components.media_player import (
     MediaPlayerEntityFeature,
     MediaPlayerState,
 )
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from sony_tv_rs232 import (
     InputSource,
     PowerState,
     SerialKitError,
+    SonyCommandError,
     SoundMode,
 )
 
 from .const import DOMAIN, MANUFACTURER
-from .entity import SonyTVEntity
+from .coordinator import SonyTVCoordinator, SonyTVRS232ConfigEntry
 
-if TYPE_CHECKING:
-    from collections.abc import Coroutine
+# The library serialises commands on the wire already; 1 keeps HA from queueing
+# a burst of service calls behind that lock until they time out.
+PARALLEL_UPDATES = 1
 
-    from homeassistant.core import HomeAssistant
-    from homeassistant.helpers.entity_platform import AddEntitiesCallback
-
-    from .coordinator import SonyTVCoordinator
-    from .data import SonyTVConfigEntry
-
-SOURCE_NAMES: dict[InputSource, str] = {
-    InputSource.TV: "TV",
-    InputSource.VIDEO1: "Video 1",
-    InputSource.VIDEO2: "Video 2",
-    InputSource.VIDEO3: "Video 3",
-    InputSource.COMPONENT1: "Component 1",
-    InputSource.COMPONENT2: "Component 2",
-    InputSource.HDMI1: "HDMI 1",
-    InputSource.HDMI2: "HDMI 2",
-    InputSource.HDMI3: "HDMI 3",
-    InputSource.HDMI4: "HDMI 4",
-    InputSource.PC: "PC",
+INPUT_SOURCE_SONY_TO_HA: dict[InputSource, str] = {
+    InputSource.TV: "tv",
+    InputSource.VIDEO1: "video1",
+    InputSource.VIDEO2: "video2",
+    InputSource.VIDEO3: "video3",
+    InputSource.COMPONENT1: "component1",
+    InputSource.COMPONENT2: "component2",
+    InputSource.HDMI1: "hdmi1",
+    InputSource.HDMI2: "hdmi2",
+    InputSource.HDMI3: "hdmi3",
+    InputSource.HDMI4: "hdmi4",
+    InputSource.PC: "pc",
+}
+INPUT_SOURCE_HA_TO_SONY: dict[str, InputSource] = {
+    value: key for key, value in INPUT_SOURCE_SONY_TO_HA.items()
 }
 
-SOUND_MODE_NAMES: dict[SoundMode, str] = {mode: mode.name.title() for mode in SoundMode}
+SOUND_MODE_SONY_TO_HA: dict[SoundMode, str] = {
+    SoundMode.DYNAMIC: "dynamic",
+    SoundMode.STANDARD: "standard",
+    SoundMode.CUSTOM: "custom",
+}
+SOUND_MODE_HA_TO_SONY: dict[str, SoundMode] = {
+    value: key for key, value in SOUND_MODE_SONY_TO_HA.items()
+}
+
+
+def catch_command_errors[**_P](
+    func: Callable[_P, Coroutine[Any, Any, None]],
+) -> Callable[_P, Coroutine[Any, Any, None]]:
+    """Translate library errors raised by an action into HomeAssistantError."""
+
+    @wraps(func)
+    async def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> None:
+        try:
+            await func(*args, **kwargs)
+        except SonyCommandError as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="command_rejected",
+                translation_placeholders={"error": str(err)},
+            ) from err
+        except (SerialKitError, OSError) as err:
+            # SerialKitError covers CommandTimeoutError, ConnectionLostError
+            # and the ProtocolError family.
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="command_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
+
+    return wrapper
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,  # noqa: ARG001
-    entry: SonyTVConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    hass: HomeAssistant,
+    entry: SonyTVRS232ConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the media player entity for the TV."""
-    async_add_entities([SonyTVMediaPlayer(entry.runtime_data.coordinator, entry)])
+    async_add_entities([SonyTVRS232MediaPlayer(entry.runtime_data)])
 
 
-class SonyTVMediaPlayer(SonyTVEntity, MediaPlayerEntity):
+class SonyTVRS232MediaPlayer(CoordinatorEntity[SonyTVCoordinator], MediaPlayerEntity):
     """A Sony Bravia TV controlled over RS-232."""
 
     _attr_device_class = MediaPlayerDeviceClass.TV
-    _attr_assumed_state = True
+    _attr_has_entity_name = True
     _attr_name = None
+    _attr_translation_key = "tv"
+    _attr_assumed_state = True
+    _attr_source_list = list(INPUT_SOURCE_SONY_TO_HA.values())
+    _attr_sound_mode_list = list(SOUND_MODE_SONY_TO_HA.values())
     _attr_supported_features = (
         MediaPlayerEntityFeature.TURN_ON
         | MediaPlayerEntityFeature.TURN_OFF
@@ -81,20 +121,14 @@ class SonyTVMediaPlayer(SonyTVEntity, MediaPlayerEntity):
         | MediaPlayerEntityFeature.SELECT_SOUND_MODE
     )
 
-    def __init__(
-        self,
-        coordinator: SonyTVCoordinator,
-        entry: SonyTVConfigEntry,
-    ) -> None:
+    def __init__(self, coordinator: SonyTVCoordinator) -> None:
         """Set up the unique id and device."""
         super().__init__(coordinator)
-        self._attr_source_list = list(SOURCE_NAMES.values())
-        self._attr_sound_mode_list = list(SOUND_MODE_NAMES.values())
-        self._attr_unique_id = entry.entry_id
+        entry_id = coordinator.config_entry.entry_id
+        self._attr_unique_id = entry_id
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
+            identifiers={(DOMAIN, entry_id)},
             manufacturer=MANUFACTURER,
-            name=entry.title,
         )
 
     @property
@@ -118,75 +152,55 @@ class SonyTVMediaPlayer(SonyTVEntity, MediaPlayerEntity):
 
     @property
     def source(self) -> str | None:
-        """Return the name of the last known input source."""
+        """Return the last known input source."""
         current = self.coordinator.data.input_source
-        if current is None:
-            return None
-        return SOURCE_NAMES.get(current, current.name.title())
+        return INPUT_SOURCE_SONY_TO_HA.get(current) if current is not None else None
 
     @property
     def sound_mode(self) -> str | None:
         """Return the last known sound mode."""
         mode = self.coordinator.data.sound_mode
-        return SOUND_MODE_NAMES[mode] if mode is not None else None
+        return SOUND_MODE_SONY_TO_HA.get(mode) if mode is not None else None
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Expose picture and aspect modes."""
-        data = self.coordinator.data
-        attrs: dict[str, Any] = {}
-        if data.picture_mode is not None:
-            attrs["picture_mode"] = data.picture_mode.name.lower()
-        if data.wide_mode is not None:
-            attrs["wide_mode"] = data.wide_mode.name.lower()
-        return attrs
-
-    async def _send(self, command: Coroutine[Any, Any, Any]) -> None:
-        """Await a TV command, mapping library errors to HA errors."""
-        try:
-            await command
-        except (SerialKitError, OSError) as err:
-            # SerialKitError covers CommandTimeoutError, ConnectionLostError,
-            # and the ProtocolError family (SonyCommandError/SonyProtocolError).
-            raise HomeAssistantError(f"Command to Sony TV failed: {err}") from err
-
+    @catch_command_errors
     async def async_turn_on(self) -> None:
-        """Turn the TV on (requires standby listening to have been armed)."""
-        await self._send(self.coordinator.tv.power_on())
+        """Turn the TV on (standby listening is armed on every connect)."""
+        await self.coordinator.tv.power_on()
 
+    @catch_command_errors
     async def async_turn_off(self) -> None:
         """Turn the TV off (standby)."""
-        await self._send(self.coordinator.tv.power_off())
+        await self.coordinator.tv.power_off()
 
+    @catch_command_errors
     async def async_set_volume_level(self, volume: float) -> None:
-        """Set the TV volume."""
-        await self._send(self.coordinator.tv.set_volume(round(volume * 100)))
+        """Set volume level, range 0..1."""
+        await self.coordinator.tv.set_volume(round(volume * 100))
 
+    @catch_command_errors
     async def async_volume_up(self) -> None:
         """Step the volume up."""
-        await self._send(self.coordinator.tv.volume_up())
+        await self.coordinator.tv.volume_up()
 
+    @catch_command_errors
     async def async_volume_down(self) -> None:
         """Step the volume down."""
-        await self._send(self.coordinator.tv.volume_down())
+        await self.coordinator.tv.volume_down()
 
+    @catch_command_errors
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute or unmute the TV."""
-        tv = self.coordinator.tv
-        await self._send(tv.mute_on() if mute else tv.mute_off())
+        if mute:
+            await self.coordinator.tv.mute_on()
+        else:
+            await self.coordinator.tv.mute_off()
 
+    @catch_command_errors
     async def async_select_source(self, source: str) -> None:
-        """Select an input source by name."""
-        for input_source, name in SOURCE_NAMES.items():
-            if name == source:
-                await self._send(self.coordinator.tv.select_input_source(input_source))
-                return
-        raise HomeAssistantError(f"Unknown source: {source}")
+        """Select an input source."""
+        await self.coordinator.tv.select_input_source(INPUT_SOURCE_HA_TO_SONY[source])
 
+    @catch_command_errors
     async def async_select_sound_mode(self, sound_mode: str) -> None:
-        """Select a sound mode by name."""
-        for mode, name in SOUND_MODE_NAMES.items():
-            if name == sound_mode:
-                await self._send(self.coordinator.tv.set_sound_mode(mode))
-                return
-        raise HomeAssistantError(f"Unknown sound mode: {sound_mode}")
+        """Select a sound mode."""
+        await self.coordinator.tv.set_sound_mode(SOUND_MODE_HA_TO_SONY[sound_mode])

@@ -1,7 +1,5 @@
 """Config flow for the Sony TV RS-232 integration."""
 
-from __future__ import annotations
-
 import asyncio
 from typing import Any
 
@@ -14,55 +12,64 @@ from sony_tv_rs232 import SerialKitError, SonyTV
 
 from .const import DOMAIN, LOGGER
 
-# Bound the port open so an unreachable socket:// / esphome:// URL surfaces as
+# Bound the port open so an unreachable socket:// or esphome:// URL surfaces as
 # cannot_connect instead of hanging the flow. connect() opens the port and runs
-# the handshake, which is paced; the handshake's own query timeouts are small.
+# the paced handshake; its own per-command timeouts are small.
 _CONNECT_TIMEOUT = 15.0
 
 # SerialPortSelector lists the host's serial ports plus remote ports from
 # ESPHome serial proxies; requires "usb" in the manifest dependencies.
-STEP_USER_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_PORT): SerialPortSelector(),
-    },
-)
+STEP_USER_SCHEMA = vol.Schema({vol.Required(CONF_PORT): SerialPortSelector()})
 
 
-class SonyTVConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Ask for the serial port the TV is wired to.
+def _loggable_port(port: str) -> str:
+    """Strip the query from a port URL: an esphome:// URL can carry its API key."""
+    return port.split("?", 1)[0]
 
-    Sony's protocol has no ping and consumer Bravia TVs ignore query
-    packets entirely, so the flow can only verify that the port opens; a
-    wiring problem surfaces later as unacknowledged commands.
+
+async def _async_attempt_connect(port: str) -> str | None:
+    """Try to open the port and run the handshake.
+
+    Returns None on success, otherwise the error key for the form. Sony's
+    protocol has no ping and consumer Bravia TVs ignore query packets, so this
+    can only prove the port opens; a wiring problem surfaces later as commands
+    that are never acknowledged.
     """
+    tv = SonyTV(port)
+    try:
+        async with asyncio.timeout(_CONNECT_TIMEOUT):
+            await tv.connect()
+    except (SerialKitError, OSError, ValueError, TimeoutError) as err:
+        LOGGER.error("Error opening %s: %s", _loggable_port(port), err)
+        return "cannot_connect"
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("Unexpected exception opening %s", _loggable_port(port))
+        return "unknown"
+    else:
+        await tv.disconnect()
+        return None
+
+
+class SonyTVRS232ConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Ask for the serial port the TV is wired to."""
 
     VERSION = 1
 
     async def async_step_user(
-        self,
-        user_input: dict[str, Any] | None = None,
+        self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle the initial step."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            port = user_input[CONF_PORT].strip()
+            port = user_input[CONF_PORT]
             self._async_abort_entries_match({CONF_PORT: port})
-            tv = SonyTV(port)
-            try:
-                async with asyncio.timeout(_CONNECT_TIMEOUT):
-                    await tv.connect()
-            except (SerialKitError, OSError, ValueError, TimeoutError) as err:
-                LOGGER.error("Error opening %s: %s", port, err)
-                errors["base"] = "cannot_connect"
-            else:
-                # connect() opened the port and ran the handshake (which
-                # probes with a power query). Consumer sets ignore queries, so
-                # reaching here simply means the port is usable.
-                await tv.disconnect()
+            error = await _async_attempt_connect(port)
+            if error is None:
                 return self.async_create_entry(
                     title="Sony TV",
                     data={CONF_PORT: port},
                 )
+            errors["base"] = error
 
         return self.async_show_form(
             step_id="user",

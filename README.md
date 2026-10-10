@@ -2,7 +2,7 @@
 
 A [HACS](https://hacs.xyz) custom integration for Sony Bravia TVs controlled
 over **RS-232**, built on the
-[sony-tv-rs232](https://github.com/home-assistant-libs/sony-tv-rs232) library.
+[sony-tv-rs232](https://github.com/bbangert/sony-tv-rs232) library.
 
 Unlike the core `braviatv` integration (which uses the network API), this
 integration talks to the TV's serial port — useful for wall-mounted installs
@@ -22,24 +22,17 @@ control is disabled.
 Copy `custom_components/sony_tv_rs232/` into your Home Assistant
 `config/custom_components/` directory and restart.
 
-> [!NOTE]
-> The [sony-tv-rs232](https://github.com/home-assistant-libs/sony-tv-rs232)
-> driver has no PyPI release, so its package is **vendored** into the
-> integration at `custom_components/sony_tv_rs232/sony_tv_rs232/` (tracking
-> upstream commit `da1937d`). Everything else is installed from PyPI via the
-> manifest `requirements`:
-> [serial-toolkit](https://pypi.org/project/serial-toolkit/) (the serialkit
-> toolkit — imported as `serialkit`) and
-> [serialx](https://pypi.org/project/serialx/) (the async serial transport).
-> Requirements are PyPI-only on purpose: a `git+https://…` requirement passes
-> CI but fails to install at HA runtime.
+The driver is installed from PyPI via the manifest `requirements`:
+[sony-tv-rs232](https://pypi.org/project/sony-tv-rs232/), which pulls in
+[serial-toolkit](https://pypi.org/project/serial-toolkit/) (imported as
+`serialkit`) and [serialx](https://pypi.org/project/serialx/).
 
 ## Configuration
 
 Add the integration via **Settings → Devices & Services → Add Integration →
 Sony TV RS-232**. The only input is the serial port, picked from a dropdown
 that lists the host's local serial ports (e.g. `/dev/ttyUSB0`) together with
-any ESPHome serial proxy ports (requires Home Assistant 2026.7 or later).
+any ESPHome serial proxy ports (requires Home Assistant 2026.9.1 or later).
 
 Serial settings are fixed by Sony: 9600 baud 8N1, no flow control. Most
 Bravia TVs use a DE-9 male connector and need a **null-modem** cable; some
@@ -66,14 +59,20 @@ One `media_player` (device class `tv`) with:
 Sony's consumer RS-232 protocol is **set-only**: the TV acknowledges
 commands but doesn't report changes made with the IR remote, and most
 consumer models ignore status queries (only Pro Bravia / B2B displays answer
-them). The entity is therefore an *assumed-state* media player: it reflects
-the last acknowledged command, and the integration polls the queryable
-functions once a minute for displays that do answer. On displays that answer
-queries, the integration also runs a **full state query** at startup when
-the TV is on, and again a few seconds after every power-on, so the entity
-repopulates; set-only TVs skip these rounds entirely (each query would just
-time out). If the serial link drops, the integration reconnects
-automatically with backoff.
+them). The entity is therefore an *assumed-state* media player that reflects
+the last acknowledged command.
+
+On displays that answer queries, the integration polls every 60 seconds:
+only the power state while the TV is in standby, and power, input, volume
+and mute while it is on. It also re-queries a few seconds after every
+power-on so the entity repopulates once the set has booted. Set-only TVs are
+not polled at all (each query would just time out).
+
+A TV that has sat idle loses the first command sent to it and answers with a
+parse error; the driver resends that one command, so the first `turn_on`
+after a quiet spell works without a retry on your side. If the serial link
+drops, the driver reconnects automatically with backoff and the entity is
+unavailable in the meantime.
 
 ## License
 

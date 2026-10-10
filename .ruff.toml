@@ -2,14 +2,6 @@
 
 target-version = "py314"
 
-# The vendored sony-tv-rs232 and serialkit libraries keep their upstream style
-# (they are linted in their own repos); the integration's ALL ruleset does not
-# apply to vendored code.
-extend-exclude = [
-    "custom_components/sony_tv_rs232/sony_tv_rs232",
-    "custom_components/sony_tv_rs232/serialkit",
-]
-
 [lint]
 select = [
     "ALL",
@@ -17,6 +9,7 @@ select = [
 
 ignore = [
     "ANN401", # Dynamically typed expressions (typing.Any) are disallowed
+    "CPY001", # missing copyright notice (HA core has none)
     "D203", # no-blank-line-before-class (incompatible with formatter)
     "D213", # multi-line-summary-second-line (we use D212, like HA core)
     "COM812", # incompatible with formatter
@@ -26,6 +19,15 @@ ignore = [
     "TRY003", # long messages outside exception class (HA core style)
     "FBT001", # boolean positional arg (fixed HA entity method signatures)
     "FBT002", # boolean default positional arg
+    # The integration is written in HA core's style so it lifts into core
+    # unchanged; these rules are off in core's own ruff configuration.
+    "ARG001", # unused function argument (fixed HA platform signatures)
+    "E501", # line too long (the formatter owns line length)
+    "RUF012", # mutable class attribute (HA _attr_* lists)
+    "TC001", # runtime imports, no TYPE_CHECKING blocks
+    "TC002",
+    "TC003",
+    "UP049", # private type parameters (`[**_P]`)
 ]
 
 [lint.flake8-pytest-style]
