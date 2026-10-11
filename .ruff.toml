@@ -30,6 +30,16 @@ ignore = [
     "UP049", # private type parameters (`[**_P]`)
 ]
 
+# Core's import order, so the files here stay byte-identical to the core copy.
+[lint.isort]
+force-sort-within-sections = true
+known-first-party = ["homeassistant"]
+# The package directory shares the library's name, which ruff would otherwise
+# read as first-party.
+known-third-party = ["sony_tv_rs232"]
+combine-as-imports = true
+split-on-trailing-comma = false
+
 [lint.flake8-pytest-style]
 fixture-parentheses = false
 

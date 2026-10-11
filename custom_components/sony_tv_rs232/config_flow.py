@@ -1,14 +1,14 @@
 """Config flow for the Sony TV RS-232 integration."""
 
 import asyncio
-from typing import Any
+from typing import Any, override
 
+from sony_tv_rs232 import SerialKitError, SonyTV
 import voluptuous as vol
+
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_PORT
 from homeassistant.helpers.selector import SerialPortSelector
-
-from sony_tv_rs232 import SerialKitError, SonyTV
 
 from .const import DOMAIN, LOGGER
 
@@ -55,6 +55,7 @@ class SonyTVRS232ConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    @override
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:

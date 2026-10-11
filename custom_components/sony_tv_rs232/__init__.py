@@ -1,13 +1,13 @@
 """The Sony TV RS-232 integration."""
 
+from sony_tv_rs232 import SonyTV
+
 from homeassistant.const import CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
 
-from sony_tv_rs232 import SonyTV
-
 from .coordinator import SonyTVCoordinator, SonyTVRS232ConfigEntry
 
-PLATFORMS: list[Platform] = [Platform.MEDIA_PLAYER]
+PLATFORMS = [Platform.MEDIA_PLAYER]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: SonyTVRS232ConfigEntry) -> bool:

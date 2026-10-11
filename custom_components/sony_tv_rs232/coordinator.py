@@ -13,11 +13,7 @@ reflects those notifications into Home Assistant.
 
 from collections.abc import Callable
 from datetime import datetime
-
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.event import async_call_later
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from typing import override
 
 from sony_tv_rs232 import (
     CommandTimeoutError,
@@ -28,6 +24,11 @@ from sony_tv_rs232 import (
     SonyTV,
     TVState,
 )
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN, LOGGER, POWER_ON_REFRESH_DELAY, SCAN_INTERVAL
 
@@ -61,6 +62,7 @@ class SonyTVCoordinator(DataUpdateCoordinator[TVState]):
         self._power_on_unsub: Callable[[], None] | None = None
         self._polling = False
 
+    @override
     async def _async_setup(self) -> None:
         """Open the serial port, then subscribe to the library's notifications.
 
@@ -78,6 +80,7 @@ class SonyTVCoordinator(DataUpdateCoordinator[TVState]):
         self._tv_unsub = self.tv.subscribe(self._handle_state)
         self._sync_interval()
 
+    @override
     async def _async_update_data(self) -> TVState:
         """Poll the TV: power first, and the rest only when it is on."""
         tv = self.tv
@@ -145,6 +148,7 @@ class SonyTVCoordinator(DataUpdateCoordinator[TVState]):
         self.async_set_updated_data(state.copy())
 
     @callback
+    @override
     def async_set_updated_data(self, data: TVState) -> None:
         """Accept a pushed state; log the recovery the base class only logs on a poll."""
         if not self.last_update_success:
@@ -170,6 +174,7 @@ class SonyTVCoordinator(DataUpdateCoordinator[TVState]):
         self._power_on_unsub = None
         await self.async_request_refresh()
 
+    @override
     async def async_shutdown(self) -> None:
         """Stop polling and close the serial connection."""
         self._cancel_power_on_refresh()

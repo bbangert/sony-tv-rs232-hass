@@ -1,7 +1,7 @@
 """Constants for the Sony TV RS-232 integration."""
 
-import logging
 from datetime import timedelta
+import logging
 
 LOGGER = logging.getLogger(__package__)
 
