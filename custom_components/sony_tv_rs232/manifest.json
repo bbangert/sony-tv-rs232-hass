@@ -20,8 +20,8 @@
     "serialkit"
   ],
   "requirements": [
-    "sony-tv-rs232>=0.3.1",
+    "sony-tv-rs232>=0.3.2",
     "serialx[esphome]>=1.10.0"
   ],
-  "version": "0.7.1"
+  "version": "0.7.2"
 }
