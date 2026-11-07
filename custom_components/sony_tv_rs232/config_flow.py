@@ -13,8 +13,9 @@ from homeassistant.helpers.selector import SerialPortSelector
 from .const import DOMAIN, LOGGER
 
 # Bound the port open so an unreachable socket:// or esphome:// URL surfaces as
-# cannot_connect instead of hanging the flow. connect() opens the port and runs
-# the paced handshake; its own per-command timeouts are small.
+# cannot_connect instead of hanging the flow. With refresh_on_connect=False the
+# handshake is the power probe and the standby-listen arm: at most a few paced
+# 2 s timeouts, well inside this budget.
 _CONNECT_TIMEOUT = 15.0
 
 # SerialPortSelector lists the host's serial ports plus remote ports from
@@ -35,12 +36,11 @@ async def _async_attempt_connect(port: str) -> str | None:
     can only prove the port opens; a wiring problem surfaces later as commands
     that are never acknowledged.
     """
-    tv = SonyTV(port)
+    tv = SonyTV(port, refresh_on_connect=False)
     try:
         async with asyncio.timeout(_CONNECT_TIMEOUT):
             await tv.connect()
-    except (SerialKitError, OSError, ValueError, TimeoutError) as err:
-        LOGGER.error("Error opening %s: %s", _loggable_port(port), err)
+    except SerialKitError, OSError, ValueError, TimeoutError:
         return "cannot_connect"
     except Exception:  # noqa: BLE001
         LOGGER.exception("Unexpected exception opening %s", _loggable_port(port))
@@ -66,6 +66,9 @@ class SonyTVRS232ConfigFlow(ConfigFlow, domain=DOMAIN):
             self._async_abort_entries_match({CONF_PORT: port})
             error = await _async_attempt_connect(port)
             if error is None:
+                # A second flow for the same port may have finished while
+                # this one was connecting.
+                self._async_abort_entries_match({CONF_PORT: port})
                 return self.async_create_entry(
                     title="Sony TV",
                     data={CONF_PORT: port},
