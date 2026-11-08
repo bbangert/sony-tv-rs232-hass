@@ -63,10 +63,12 @@ them). The entity is therefore an *assumed-state* media player that reflects
 the last acknowledged command.
 
 On displays that answer queries, the integration polls every 60 seconds:
-only the power state while the TV is in standby, and power, input, volume
-and mute while it is on. It also re-queries a few seconds after every
-power-on so the entity repopulates once the set has booted. Set-only TVs are
-not polled at all (each query would just time out).
+only the power state while the TV is in standby, and power, input, volume,
+mute and sound mode while it is on. It also re-queries a few seconds after
+every power-on so the entity repopulates once the set has booted. Set-only TVs
+are not polled at all (each query would just time out). Stepping the volume
+up or down leaves the volume level unknown until it is next set or polled,
+because the TV does not say where the step landed.
 
 A TV that has sat idle loses the first command sent to it and answers with a
 parse error; the driver resends that one command, so the first `turn_on`
